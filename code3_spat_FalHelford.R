@@ -2,10 +2,14 @@
 ##### INCLUDE SPATIAL AUTOCOVARIATE IN MULTIVARATE SEAGRASS MODEL ################################
 ##### Written by: Regan Early ################################
 ##### Written on: 21st Nov 2023 ##############################
-##### Modified on: December 2023   ###########################
+##### Modified on: December 2023 by Shari Mang  ##############
 ##############################################################
 
-.libPaths("C:/SOFTWARE/R-4.3.2/library")
+save.image(".RData")
+
+#.libPaths("C:/SOFTWARE/R-4.3.2/library")
+install.packages("interactions", dependencies=TRUE, repos='http://cran.rstudio.com/')
+install.packages("partR2", dependencies=TRUE, repos='http://cran.rstudio.com/')
 library(Rcpp); library(terra) ## raster operations, focal
 library(car) ## Variance Inflation Factor, vif
 library(lme4)
@@ -13,19 +17,25 @@ library(tidyverse)
 library(AICcmodavg) ## predictSE.mer
 library(DHARMa) ## residual diagnostics for hierarchical (multi-level/mixed) regression models. https://cran.r-project.org/web/packages/DHARMa/vignettes/DHARMa.html#interpreting-residuals-and-recognizing-misspecification-problems
 library(partR2)
-library(pROC) ## rocr
-library(interactions)
+library(pROC) ## rocr 
+library(interactions) 
+library(here)
+library(effects)
+conflicted::conflict_prefer("here", "here")
+
+bng <- "+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.9996012717 +x_0=400000 +y_0=-100000 +ellps=airy +datum=OSGB36 +units=m +no_defs"
+bng_epsg <- 27700
 
 ##### Data #####
 vars <- c("bathymetry", "slope", "mlw_dist", "avg_spm", "covar_spm", "expo",
           "eunis_other_perc", "eunis_litt_perc", "eunis_coar_perc", "eunis_sand_perc", "eunis_mix_perc") 
+wd.dat <- here("variables/falhel_only/")
+wd.out <- here("results/multivar_mod/")
 
-wd.dat <- "F:/NON_PROJECT/SEAGRASS/CORNWALL_COUNCIL/DATA/variables/combined"
-wd.out <- "F:/NON_PROJECT/SEAGRASS/CORNWALL_COUNCIL/RESULTS/MULTIVARIATE_MODELS"
-
-### Read in the standardised data
-dat <- read.csv(paste0(wd.dat,"/cornwall_sg_env_unique_30m_stnd.csv")) ## Data already standardized
-dat <- dat[dat$site=="FalHelford",]
+# Read in standarized data
+dat <- read.csv(paste0(wd.dat, "falhel_sg_env_prop_occ_unique_30m_stnd.csv")) ## Data already standardized
+# only data for fal and helford
+# colnames(dat) # sea surface temp variables not included in this data
 
 dat <- dat %>% ## Models will not run with NA values in data
   drop_na()
@@ -35,94 +45,102 @@ load(paste0(wd.out,"/multivar4i_bestModel_FalHelford"))
 final <- multivar4i.best
 
 ### Environmental rasters
-bathymetry <- rast("F:/NON_PROJECT/SEAGRASS/CORNWALL_COUNCIL/DATA/variables/bathymetry/bath_cornwall_30m.tif")
-slope <- rast("F:/NON_PROJECT/SEAGRASS/CORNWALL_COUNCIL/DATA/variables/slope/slope_cornwall.tif")
-max_sst <- rast("F:/NON_PROJECT/SEAGRASS/CORNWALL_COUNCIL/DATA/variables/sst/max_sst_cornwall.tif")
-avg_sst <- rast("F:/NON_PROJECT/SEAGRASS/CORNWALL_COUNCIL/DATA/variables/sst/avg_sst_cornwall.tif")
-mlw_dist <- rast("F:/NON_PROJECT/SEAGRASS/CORNWALL_COUNCIL/DATA/variables/mlw/distance_to_mlw_cornwall.tif")
-avg_spm <- rast("F:/NON_PROJECT/SEAGRASS/CORNWALL_COUNCIL/DATA/variables/spm/spm_avg_cornwall.tif") ## is this correct?
-covar_spm <- rast("F:/NON_PROJECT/SEAGRASS/CORNWALL_COUNCIL/DATA/variables/spm/spm_covar_cornwall.tif")
-expo <- rast("F:/NON_PROJECT/SEAGRASS/CORNWALL_COUNCIL/DATA/variables/exposure/exposure_cornwall.tif")
-eunis_other_perc <- rast("F:/NON_PROJECT/SEAGRASS/CORNWALL_COUNCIL/DATA/variables/eunis/study_area/cornwall_eunis_cat_1_pres_abs.tif")
-eunis_litt_perc <- rast("F:/NON_PROJECT/SEAGRASS/CORNWALL_COUNCIL/DATA/variables/eunis/study_area/cornwall_eunis_cat_2_pres_abs.tif")
-eunis_coar_perc <- rast("F:/NON_PROJECT/SEAGRASS/CORNWALL_COUNCIL/DATA/variables/eunis/study_area/cornwall_eunis_cat_3_pres_abs.tif")
-eunis_sand_perc <- rast("F:/NON_PROJECT/SEAGRASS/CORNWALL_COUNCIL/DATA/variables/eunis/study_area/cornwall_eunis_cat_4_pres_abs.tif")
-eunis_mix_perc <- rast("F:/NON_PROJECT/SEAGRASS/CORNWALL_COUNCIL/DATA/variables/eunis/study_area/cornwall_eunis_cat_6_pres_abs.tif")
+bathymetry <- terra::rast(here("variables/bathymetry/bath_cornwall_30m.tif"))
+slope <- terra::project(terra::rast(here("variables/slope/slope_cornwall.tif")), crs(bathymetry)) ## only one not in BNG, not sure why
+mlw_dist <- terra::rast(here("variables/mlw/distance_to_mlw_cornwall.tif"))
+avg_spm <- terra::rast(here("variables/spm/spm_avg_cornwall.tif"))
+covar_spm <- terra::rast(here("variables/spm/spm_covar_cornwall.tif"))
+expo <- terra::rast(here("variables/exposure/exposure_cornwall.tif"))
+eunis_other_perc <- terra::rast(here("variables/eunis/study_area/cornwall_eunis_cat_1_pres_abs.tif"))
+eunis_litt_perc <- terra::rast(here("variables/eunis/study_area/cornwall_eunis_cat_2_pres_abs.tif"))
+eunis_coar_perc <- terra::rast(here("variables/eunis/study_area/cornwall_eunis_cat_3_pres_abs.tif"))
+eunis_sand_perc <- terra::rast(here("variables/eunis/study_area/cornwall_eunis_cat_4_pres_abs.tif"))
+eunis_mix_perc <- terra::rast(here("variables/eunis/study_area/cornwall_eunis_cat_6_pres_abs.tif"))
+
+
 
 ## Identify the coarse variables, which need resampling to the fine variables
 for (v in vars) {
   print(paste(v, res(get(v))))
 }
-
-max_sst <- resample(max_sst, bathymetry)
-avg_sst <- resample(avg_sst, bathymetry)
-avg_spm <- resample(avg_spm, bathymetry)
-covar_spm <- resample(covar_spm, bathymetry)
-expo <- resample(expo, bathymetry)
+avg_spm <- terra::resample(avg_spm, bathymetry)
+covar_spm <- terra::resample(covar_spm, bathymetry)
+expo <- terra::resample(expo, bathymetry)
 
 env <- c(bathymetry, slope, mlw_dist, avg_spm, covar_spm, expo,
          eunis_other_perc, eunis_litt_perc, eunis_coar_perc, eunis_sand_perc, eunis_mix_perc) 
 names(env) <- vars
 
+
+
+
 ##### Extract and map spatial autocorrelation in the residuals - GLM #####
 ## Set up a blank rasterfile
-rast <- (env$slope / env$slope) - 1
 
+## Alternative way to calculate residuals ##
+# resids.sim <- simulateResiduals(final) ## calculate scaled residuals. a scaled residual value of 0.5 means that half of the simulated data are higher than the observed value, and half of them lower. Min / max values are 0 / 1.
+# summary(resids.sim$scaledResiduals)
+# plot(resids, resids.sim[["scaledResiduals"]])
+
+# With data in BNG crs 
+rast_v2 <- (env$bathymetry / env$bathymetry) - 1 # is in bng
 ## Extract residuals from the GLM
-resids <- residuals(final)
+resids_v2 <- residuals(final)
+summary(resids_v2)
 
-##### Alternative way to calculate residuals #####
-resids.sim <- simulateResiduals(final) ## calculate scaled residuals. a scaled residual value of 0.5 means that half of the simulated data are higher than the observed value, and half of them lower. Min / max values are 0 / 1.
-summary(resids.sim$scaledResiduals)
-plot(resids, resids.sim[["scaledResiduals"]])
+xy_resids_v2 <- as.data.frame(cbind(dat$lon, dat$lat, resids_v2)) # used original residuals calc
+colnames(xy_resids_v2) <- c("lon","lat", "resids")
+projcrs <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
+xy_resids_v2 <- st_as_sf(x = xy_resids_v2,                         
+               coords = c("lon", "lat"),
+               crs = projcrs) # gps coordinates are in wgs84 so start with data in that form
+xy_resids_v2 <- sf::st_transform(xy_resids_v2, crs(rast_v2)) # convert go BNG
 
-xy_resids <- as.data.frame(cbind(dat$lon, dat$lat, resids))
-colnames(xy_resids) <- c("lon","lat", "resids")
+# extract coordinates
+xy_resids_v2 <- xy_resids_v2 %>%
+  dplyr::mutate(lon = sf::st_coordinates(.)[,1],
+                lat = sf::st_coordinates(.)[,2]) 
+xy <- cbind(as.numeric(xy_resids_v2$lon), as.numeric(xy_resids_v2$lat)) # coordinates of those records
+rast_v2[cellFromXY(rast_v2, xy)] <- xy_resids_v2$resids
+names(rast_v2) <- "resids"
+summary(rast_v2, size=ncell(rast_v2)); summary(resids_v2)
+writeRaster(rast_v2, paste0(wd.out,"spatial/resids_FalHelford_bng.tif"), overwrite = TRUE) ### WORKED ###
 
-xy_resids <- vect(xy_resids) ## Make spatial
-crs(xy_resids) <- "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs" ## Asign the WGS84 projection
-xy_resids <- project(xy_resids, rast) ## project to match the raster
+# Convert to original names so it matches script to follow
+rast <- rast_v2
+xy_resids <- vect(xy_resids_v2) # want as spatVector (terra format)
 
-plot(rast); points(xy_resids) ## Seems right
 
-## Map the residuals
-# rast[xy_resids] <- xy_resids$resids ## Fails in R 4.3.2, possibly due to updated terra package
-cellnum <- terra::cellFromXY(rast, geom(xy_resids)[,c("x","y")])
-rast[cellnum] <- xy_resids$resids
-names(rast) <- "resids"
-summary(rast, size=ncell(rast)) ## Ensure this matches the range of values in xy_resids
-
-writeRaster(rast, paste0(wd.out,"/SPATIAL/resids_FalHelford.tif"))
 
 #####  Use residual autocovariateas a predictor #####
 ## Focal operations: ngb is neighbourhood size, set to 3 by 3 cells; fun is function, 
-## here the mean value within the defined neighbourhood
 
 ## Calculate the moving window values for the neighbourhood of focal cells. 
 rac <- focal(rast, w=matrix(1/9,nrow=3,ncol=3), fun="sum") ## 3x3 mean filter. Something weird happening with this on 1st Dec 2023 (agter R upgrade)- use the saved raster instead
 plot(rac)
 plot(xy_resids, add=T)
-writeRaster(rac, paste0(wd.out,"/SPATIAL/rac_FalHelford.tif"))
+#writeRaster(rac, paste0(wd.out,"spatial/rac_FalHelford.tif"), overwrite = TRUE)
+rac <- terra::rast(paste0(wd.out,"spatial/rac_FalHelford.tif"))
 
 ## Extract the autocovariate to a vector and add to the presence/absence locations
-rac <- terra::extract(rac, xy_resids)$resids
+# rac<- terra::extract(rac, xy_resids)$resids   ## doesn't work ## -> creates a null object 
+rac <- terra::extract(rac, xy_resids)
 rac[is.na(rac)] <- 0 ## remove NAs
 dat.rac <- cbind(dat, rac)
-write.csv(dat.rac, paste0(wd.out,"/SPATIAL/dat_rac.csv"), row.names=F)
+dat.rac <- dat.rac %>%
+  dplyr::rename(rac = focal_sum)
+#write.csv(dat.rac, paste0(wd.out,"spatial/dat_rac.csv"), row.names=F)
+dat.rac <- read.csv(paste0(wd.out,"spatial/dat_rac.csv"))
+head(dat.rac)
 
 ## fit the RAC model using the original environmental variables and the residuals autocovariate
-multivar4i.rac <- update(final, .~. + rac , data=dat.rac) ## failed to converge
-AIC(final, multivar4i.rac) ## Model with spatial covariate is better, delta AIC -2426.
-vif(multivar4i.rac) ## same as previously - sand and mix are a bit dubious. Bathymetry VIF is high because of colinearity with the quadratic term and interaction - not of concern. 
+multivar4i.rac <- update(final, .~. + rac , data=dat.rac) ## converged 
+AIC(final, multivar4i.rac) ## Model with spatial covariate is better, delta AIC -12296.
+vif(multivar4i.rac) ## same as previously - sand and mix are a bit dubious. 
+summary(multivar4i.rac)
+#save(multivar4i.rac, file=paste0(wd.out,"spatial/multivar4i_bestModel_FalHelford_rac")) 
+load(paste0(wd.out,"spatial/multivar4i_bestModel_FalHelford_rac"))
 
-save(multivar4i.rac, file=paste0(wd.out,"/SPATIAL/multivar4i_bestModel_FalHelford_rac")) 
-
-## Remove sea surface temperature variables as interested in extrapolating model beyond SST raster.
-multivar4i.rac.noSST <- update(final, .~. + rac -max_sst -avg_sst, data=dat.rac) ## failed to converge
-AIC(final, multivar4i.rac.noSST) ## Model with spatial covariate is better, delta AIC -2426.
-vif(multivar4i.rac.noSST) ## same as previously - sand and mix are a bit dubious
-
-save(multivar4i.rac.noSST, file=paste0(wd.out,"/SPATIAL/multivar4i_bestModel_FalHelford_rac_noSST")) 
 
 ### multivar4i.rac did not converge. However, if all optimizers converge to values that are practically equivalent, then the model fit is good enough 
 multivar4i.rac.all <- allFit(multivar4i.rac)
@@ -134,15 +152,23 @@ ss$ theta               ## Cholesky factors of the random effect covariance matr
 ss$ which.OK            ## which fits worked
 ### Values are all very similar so ignore the convergence warnings for now at least
 
-##### How does the model with teh spatial autocovariate perform? #####
+##### How does the model with the spatial autocovariate perform? #####
 ## Compare parameter estimates with and without spatial autocovariate ***and SST***
-params <- cbind(c(fixef(final),NA), fixef(multivar4i.rac)) ## avg_spm, eunis_other, eunis_sand, have steeper effects. This is driven by removal of SST, rather than the autocovariate.
+params <- cbind(c(fixef(final),NA), fixef(multivar4i.rac)) 
+## bath, mlw_dist, avg_spm, expo, eunis_coar, euniws_mis, bath^2 have steeper effects. 
+colnames(params) <- c("final_mod", "spat_auto_mod") 
+write.csv(as.data.frame(fixef(multivar4i.rac)), paste0(wd.out, "spatial/params_FalHelford.csv"), row.names=T)
 
-write.csv(as.data.frame(fixef(multivar4i.rac)), paste0(wd.out, "/SPATIAL/params_FalHelford.csv"), row.names=T)
+# save out model summary
+m <- summary(multivar4i.rac)
+m <- round(m$coefficients, 4)
+write.csv(m, paste0(wd.out, "spatial/model_summary_FalHelford.csv"), row.names=T)
+
 
 ## Inspect (scaled) residuals
 resids.rac <- simulateResiduals(multivar4i.rac) ## calculate scaled residuals. a scaled residual value of 0.5 means that half of the simulated data are higher than the observed value, and half of them lower. Min / max values are 0 / 1.
 plot(resids.rac) ## Looks pretty good
+
 
 ## Residual metrics
 ##  If you have a lot of data points, residual diagnostics will nearly inevitably become significant, because having a perfectly fitting model is very unlikely. That, however, doesn’t necessarily mean that you need to change your model. 
@@ -152,8 +178,8 @@ plot(resids.rac) ## Looks pretty good
 ## If overdispersion is present, the main effect is that confidence intervals tend to be too narrow, and p-values to small, leading to inflated type I error.
 ## The opposite is true for underdispersion, i.e. the main issue of underdispersion is that you loose power.
 par(mfrow=c(1,2))
-testDispersion(multivar4i.rac) ## Resids are not significantly over or under--dispersed. 
-testZeroInflation(multivar4i.rac) ## Only very slight zero-inflation (1.4, 1.3 without SST).
+testDispersion(multivar4i.rac) ## Resids are not significantly over or under--dispersed (p = 0.12)
+testZeroInflation(multivar4i.rac) ## Only very slight zero-inflation (1.3)
 
 ## Plot residuals against all predictors to see what could be causing the trend in variance
 ## If the predictor is a factor, or if there is just a small number of observations on the x axis, plotResiduals will plot a box plot with additional tests instead of a scatter plot.
@@ -167,6 +193,8 @@ for(v in vars) {
   plotResiduals(resids.rac, form=x, xlab=v)
 }
 ## When autocovariate is in the model, there is no more trend in residuals for explanatory variables than in the original model
+## Some maybe slightly improved.
+
 
 ## Spatial autocorrelation
 par(mfrow=c(1,2))
@@ -198,10 +226,11 @@ ylims <- rep(1, length(vars))
 names(ylims) <- vars
 
 ##### Final model #####
-jpeg(paste0(wd.out,"/SPATIAL/MULTIVAR4i_results_FalHelford_1.jpg"), width=600, height=400)
+### Done in batches --> rename files and variable range in loop
+jpeg(paste0(wd.out,"spatial/MULTIVAR4i_results_FalHelford_1.jpg"), width=600, height=400)
 par(mfrow=c(2,2))
 par(mar=c(4,4,2,1)) # c(bottom, left, top, right)
-for (i in vars[1:4]) { ## Run through vars in groups of fours. Rename jpeg with appropriate number
+for (i in vars[1:4]) { ## Run through vars in groups of fours. Rename jpeg with appropriate number --> 12 vars in this model
   newdat <- data.frame(matrix(data=mns, byrow=T, nrow=10000, ncol=length(vars), dimnames=(list(NULL,vars))))
   newdat[,i] <- seq(min(dat.rac[,i]), max(dat.rac[,i]), length.out=10000)
   newdat$id_600m <- rep_len(dat.rac$id_600m, nrow(newdat))
@@ -228,11 +257,12 @@ for (i in vars[1:4]) { ## Run through vars in groups of fours. Rename jpeg with 
 
 dev.off()
 
+
 ##### Interaction plots ##### 
-### bathymetry:covar_spm interaction
-jpeg(paste0(wd.out,"/SPATIAL/MULTIVAR4i_results_FalHelford_interact_bathyCovarSPM_noSST.jpg"), width=600, height=400)
-interactions::interact_plot(multivar4i.rac, pred=bathymetry, modx=covar_spm, interval=T,
-                            y.label="Prob. Occupied", legend.main="Coef. Var. SPM")#, rug=T)
+### bathymetry:mlw_dist interaction 
+jpeg(paste0(wd.out,"spatial/MULTIVAR4i_results_FalHelford_interact_bathyMLWdist.jpg"), width=600, height=400)
+interactions::interact_plot(multivar4i.rac, pred=bathymetry, modx=mlw_dist, interval=T,
+                            y.label="Prob. Occupied", legend.main="Distance to MLW")#, rug=T)
 dev.off()
 
 ##### Calculate AUC by cross-validation #####
@@ -254,8 +284,10 @@ for(i in 1:10) { ## 10-fold cross-validation
   roc_obj <- roc(dat.valid$present, p.valid)
   AUC <- c(AUC, auc(roc_obj))
 }
-mean(AUC) ## 
-sd(AUC) ## 
+mean(AUC) ##  0.923368
+sd(AUC) ## 0.005723033
+
+
 
 ##### Calculate partial R-squared of each variable in the final model #####
 ### https://cran.r-project.org/web/packages/partR2/vignettes/Using_partR2.html
@@ -263,13 +295,19 @@ Rsquare <- partR2(multivar4i.rac, partvars=vars, max_level=1, # the argument max
                  R2_type = "marginal", nboot = 10) ## Marginal R2 refers to the variance explained by fixed effect predictors relative to the total variance in the respons
 
 Rsquare$R2   # Partial R2s Very low when random intercept of 600m grid-cell not included
-write.csv(Rsquare$R2, paste0(wd.out,"/SPATIAL/Rsq_FalHelford.csv"), row.names=F)
+write.csv(Rsquare$R2, paste0(wd.out,"spatial/Rsq_FalHelford.csv"), row.names=F)
+
+Rsqare_r2 <- read.csv(paste0(wd.out,"spatial/Rsq_FalHelford.csv"))
+
+Rsquare <- readRDS(paste0(wd.out, "spatial/Rsquare_output.rds"))
 
 library(patchwork)
 p1 <- forestplot(Rsquare, type = "R2", text_size = 10)
 p2 <- forestplot(Rsquare, type = "IR2", text_size = 10) ## Inclusive R2. This is SC^2 * R2_full.
 p3 <- forestplot(Rsquare, type = "SC", text_size = 10) ## Structure coefficients are the correlation between a predictor and the predicted response. Squared structure coefficients indicate how much of the regression effect can be attributed to a given predictor
 p4 <- forestplot(Rsquare, type = "BW", text_size = 10) ## Standardised model estimates (beta weights) for fixed effects. Beta weights for Gaussian models are calculated as beta * sd(x)/sd(y), with beta being the estimated slope of a fixed effect for predictor x and response y. Beta weight for Non-Gaussian models are calculated as beta * sd(x). Beta weights for interactions or polynomial terms are not informative at the moment and we recommend users to standardise variables themselves before fitting the model and to look at the model estimates (Ests) instead of beta weights (BW) in the partR2 output. See vignette for details.
+jpeg(paste0(wd.out,"spatial/MULTIVAR4i_results_FalHelford_rsquare_outputs.jpg"), width=800, height=700)
 (p1 + p2) / (p3 + p4) + plot_annotation(tag_levels = "A")
+dev.off()
 ## SCs are better than beta weights when there is multicollinearity in the explanatory variables. A low β weight and a high structure coefficient indicates multicollinearity, and beta weight is masked by multicollinearity
 ## Confidence Intervals are 95% by default

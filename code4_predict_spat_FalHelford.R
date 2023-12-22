@@ -2,57 +2,57 @@
 ##### PREDICT SEAGRASS SUITABILITY FOR RESTORATION ###########
 ##### Written by: Regan Early ################################
 ##### Written on: 21st November 2023 ##############################
-##### Modified on: December 2023  ###########################
+##### Modified on: 21st December 2023 by Shari Mang ###############
 ##############################################################
 
-.libPaths("C:/SOFTWARE/R-4.3.2/library")
+#.libPaths("C:/SOFTWARE/R-4.3.2/library")
+
+install.packages("merTools", dependencies=TRUE, repos='http://cran.rstudio.com/')
 library(merTools) ## predictInterval - bootstrapped confidence intervals for mixed models in a reasonable time. averageObs.
 library(terra)
+library(here)
+conflicted::conflict_prefer("here", "here")
 
 ##### Data #####
-vars <- c("bathymetry", "slope", "max_sst", "avg_sst", "mlw_dist", "avg_spm", "covar_spm", "expo",
+vars <- c("bathymetry", "slope", "mlw_dist", "avg_spm", "covar_spm", "expo",
           "eunis_other_perc", "eunis_litt_perc", "eunis_coar_perc", "eunis_sand_perc", "eunis_mix_perc") 
-
-wd.dat <- "F:/NON_PROJECT/SEAGRASS/CORNWALL_COUNCIL/DATA/variables/combined"
-wd.out <- "F:/NON_PROJECT/SEAGRASS/CORNWALL_COUNCIL/RESULTS/MULTIVARIATE_MODELS/SPATIAL"
+wd.dat <- here("variables/falhel_only/")
+wd.out <- here("results/multivar_mod/spatial/")
 
 ### Read in the standardised data with spatial autocovariate
-dat.rac <- read.csv(paste0(wd.out,"/dat_rac.csv"))
-
+dat.rac <- read.csv(paste0(wd.out,"dat_rac.csv"))
 destdize <- read.csv(paste0(wd.dat, "/allAreas_means_sds.csv"))
 
 ### Spatial model
-load(paste0(wd.out,"/multivar4i_bestModel_FalHelford_rac")) 
+load(paste0(wd.out,"multivar4i_bestModel_FalHelford_rac")) # multivar4i.rac
+
 
 ### Environmental rasters
-bathymetry <- rast("F:/NON_PROJECT/SEAGRASS/CORNWALL_COUNCIL/DATA/variables/bathymetry/bath_cornwall_30m.tif")
-slope <- rast("F:/NON_PROJECT/SEAGRASS/CORNWALL_COUNCIL/DATA/variables/slope/slope_cornwall.tif")
-max_sst <- rast("F:/NON_PROJECT/SEAGRASS/CORNWALL_COUNCIL/DATA/variables/sst/max_sst_cornwall.tif")
-avg_sst <- rast("F:/NON_PROJECT/SEAGRASS/CORNWALL_COUNCIL/DATA/variables/sst/avg_sst_cornwall.tif")
-mlw_dist <- rast("F:/NON_PROJECT/SEAGRASS/CORNWALL_COUNCIL/DATA/variables/mlw/distance_to_mlw_cornwall.tif")
-avg_spm <- rast("F:/NON_PROJECT/SEAGRASS/CORNWALL_COUNCIL/DATA/variables/spm/spm_avg_cornwall.tif") ## is this correct?
-covar_spm <- rast("F:/NON_PROJECT/SEAGRASS/CORNWALL_COUNCIL/DATA/variables/spm/spm_covar_cornwall.tif")
-expo <- rast("F:/NON_PROJECT/SEAGRASS/CORNWALL_COUNCIL/DATA/variables/exposure/exposure_cornwall.tif")
-eunis_other_perc <- rast("F:/NON_PROJECT/SEAGRASS/CORNWALL_COUNCIL/DATA/variables/eunis/study_area/cornwall_eunis_cat_1_pres_abs.tif")
-eunis_litt_perc <- rast("F:/NON_PROJECT/SEAGRASS/CORNWALL_COUNCIL/DATA/variables/eunis/study_area/cornwall_eunis_cat_2_pres_abs.tif")
-eunis_coar_perc <- rast("F:/NON_PROJECT/SEAGRASS/CORNWALL_COUNCIL/DATA/variables/eunis/study_area/cornwall_eunis_cat_3_pres_abs.tif")
-eunis_sand_perc <- rast("F:/NON_PROJECT/SEAGRASS/CORNWALL_COUNCIL/DATA/variables/eunis/study_area/cornwall_eunis_cat_4_pres_abs.tif")
-eunis_mix_perc <- rast("F:/NON_PROJECT/SEAGRASS/CORNWALL_COUNCIL/DATA/variables/eunis/study_area/cornwall_eunis_cat_6_pres_abs.tif")
+bathymetry <- terra::rast(here("variables/bathymetry/bath_cornwall_30m.tif"))
+slope <- terra::project(terra::rast(here("variables/slope/slope_cornwall.tif")), crs(bathymetry)) ## only one not in BNG, not sure why
+mlw_dist <- terra::rast(here("variables/mlw/distance_to_mlw_cornwall.tif"))
+avg_spm <- terra::rast(here("variables/spm/spm_avg_cornwall.tif"))
+covar_spm <- terra::rast(here("variables/spm/spm_covar_cornwall.tif"))
+expo <- terra::rast(here("variables/exposure/exposure_cornwall.tif"))
+eunis_other_perc <- terra::rast(here("variables/eunis/study_area/cornwall_eunis_cat_1_pres_abs.tif"))
+eunis_litt_perc <- terra::rast(here("variables/eunis/study_area/cornwall_eunis_cat_2_pres_abs.tif"))
+eunis_coar_perc <- terra::rast(here("variables/eunis/study_area/cornwall_eunis_cat_3_pres_abs.tif"))
+eunis_sand_perc <- terra::rast(here("variables/eunis/study_area/cornwall_eunis_cat_4_pres_abs.tif"))
+eunis_mix_perc <- terra::rast(here("variables/eunis/study_area/cornwall_eunis_cat_6_pres_abs.tif"))
+
 
 ## Identify the coarse variables, which need resampling to the fine variables
 for (v in vars) {
   print(paste(v, res(get(v))))
 }
+avg_spm <- terra::resample(avg_spm, bathymetry)
+covar_spm <- terra::resample(covar_spm, bathymetry)
+expo <- terra::resample(expo, bathymetry)
 
-max_sst <- resample(max_sst, bathymetry)
-avg_sst <- resample(avg_sst, bathymetry)
-avg_spm <- resample(avg_spm, bathymetry)
-covar_spm <- resample(covar_spm, bathymetry)
-expo <- resample(expo, bathymetry)
-
-env.ras <- c(bathymetry, slope, max_sst, avg_sst, mlw_dist, avg_spm, covar_spm, expo,
+env.ras <- c(bathymetry, slope, mlw_dist, avg_spm, covar_spm, expo,
          eunis_other_perc, eunis_litt_perc, eunis_coar_perc, eunis_sand_perc, eunis_mix_perc) 
 names(env.ras) <- vars
+
 
 ##### Predict (can't do the inverse link process or the GLMM process direct to raster) #####
 ### Put environmental data through same standardisation process as the original environmental data
@@ -62,12 +62,12 @@ for (n in names(env.ras)) {
 }
 
 ## Add autocovariate term
-rac <- rast(paste0(wd.out,"/rac_FalHelford.tif"))
+rac <- terra::rast(paste0(wd.out,"rac_FalHelford.tif"))
 names(rac) <- "rac"
 env.ras <- c(env.ras, rac)
 
 ## Save standardised and rac rasters together
-writeRaster(env.ras, paste0(wd.dat,"/env_standardised.tif")) ## Saves all layers
+writeRaster(env.ras, paste0(wd.dat,"env_rac_standardised.tif")) ## Saves all layers
 
 ## Make all nodata values of EUNIS categories 0 (so that can remove NAs later)
 env.ras$eunis_other_perc[is.na(env.ras$eunis_other_perc)] <- 0
@@ -80,7 +80,10 @@ env.ras$eunis_mix_perc[is.na(env.ras$eunis_mix_perc)] <- 0
 env <- as.data.frame(terra::extract(env.ras, 1:ncell(env.ras)))
 
 ## Add the random effect value
-env$id_600m <- 3700 ## Derived from mean(multivar4i.rac@frame$id_600m) ## @frame is the data associated with a merMod object
+mean(multivar4i.rac@frame$id_600m) # 3417.318  # @frame is the data associated with a merMod object
+env$id_600m <- 3417  
+    # 3700 used previously - check with Regan as only mean calculation is commented out
+
 
 ### Make the prediction for the final model, including 95% confidence intervals
 p <- predictInterval(multivar4i.rac, env, type="probability", which="fixed", level=0.95, n.sims=100, include.resid.var=F, stat="median")
