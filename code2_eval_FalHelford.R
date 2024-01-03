@@ -2,16 +2,18 @@
 ##### EVALUATE SEAGRASS MODEL ################################
 ##### Written by: Regan Early ################################
 ##### Written on: 28th May 2020 ##############################
-##### Modified on: December 2023   ###########################
+##### Modified on: December 2023 by Shari Mang  ##############
 ##############################################################
 
-.libPaths("C:/SOFTWARE/R-4.3.2/library")
+pacman::p_install(interactions, partR2) # both unavailable for this version of R
+
+#.libPaths("C:/SOFTWARE/R-4.3.2/library")
 library(ggplot2) 
 library(MuMIn)
 library(lme4) ## Ensure Matrix package is up to date to support lme4 after R version 4.3.2
 library(boot) ## Calculate AUC using cross-validation
 library(pROC)
-library(rsq) ## perhaps not available on cluster?
+# library(rsq) ## perhaps not available on cluster? --> R can't find
 library(cli); library(scales); library(vctrs); library(lifecycle); library(tidyverse) ## Issues witn  namespace mean I need to load some packages before tidyverse. Shouldn't be necessary normally
 library(interactions) ## interact_plot
 library(AICcmodavg) ## predictSE.mer
@@ -19,29 +21,35 @@ library(MLmetrics) ## Gini coefficient
 library(partR2)
 library(DHARMa) ## residual diagnostics for hierarchical (multi-level/mixed) regression models. https://cran.r-project.org/web/packages/DHARMa/vignettes/DHARMa.html#interpreting-residuals-and-recognizing-misspecification-problems
 library(glmmTMB)
+conflicted::conflict_prefer("here", "here")
+
 
 ##### Data #####
-vars <- c("bathymetry", "slope", "max_sst", "avg_sst", "mlw_dist", "avg_spm", "covar_spm", "expo",
+vars <- c("bathymetry", "slope", "mlw_dist", "avg_spm", "covar_spm", "expo",
           "eunis_other_perc", "eunis_litt_perc", "eunis_coar_perc", "eunis_sand_perc", "eunis_mix_perc") 
 
-wd.dat <- "F:/NON_PROJECT/SEAGRASS/CORNWALL_COUNCIL/DATA/variables/combined"
-wd.out <- "F:/NON_PROJECT/SEAGRASS/CORNWALL_COUNCIL/RESULTS/MULTIVARIATE_MODELS"
+wd.dat <- here("variables/falhel_only/")
+wd.out <- here("results/multivar_mod/")
+wd.plot <- here("results/multivar_mod/plots/")
 
-### Read in the standardised data
-dat <- read.csv(paste0(wd.dat,"/cornwall_sg_env_unique_30m_stnd.csv")) ## Data already standardized
-dat <- dat[dat$site=="FalHelford",]
+dat <- read.csv(paste0(wd.dat, "falhel_sg_env_prop_occ_unique_30m_stnd.csv")) ## Data already standardized
+# only data for fal and helford
+colnames(dat) # sea surface temp variables not included in this data
 
 dat <- dat %>% ## Models will not run with NA values in data
   drop_na()
+View(dat)
+
 
 ### Model
-load(paste0(wd.out,"/multivar4i_bestModel_FalHelford"))
+load(paste0(wd.out,"multivar4i_bestModel_FalHelford"))
 final <- multivar4i.best
 
 ## Inspect (scaled) residuals
-resids <- simulateResiduals(final) ## calculate scaled residuals. a scaled residual value of 0.5 means that half of the simulated data are higher than the observed value, and half of them lower. Min / max values are 0 / 1.
+resids <- DHARMa::simulateResiduals(final) ## calculate scaled residuals. a scaled residual value of 0.5 means that half of the simulated data are higher than the observed value, and half of them lower. Min / max values are 0 / 1.
+png(paste0(wd.plot, "final_residuals.png"), width = 900, height = 700)
 plot(resids)
-
+dev.off()
 ## Residual metrics
 ## If you have a lot of data points, residual diagnostics will nearly inevitably become significant, because having a perfectly fitting model is very unlikely. 
 ## That, however, doesn’t necessarily mean that you need to change your model. 
@@ -50,26 +58,48 @@ plot(resids)
 ## Dispersion. Over/under dispersion is common in binomial models
 ## If overdispersion is present, the main effect is that confidence intervals tend to be too narrow, and p-values to small, leading to inflated type I error.
 ## The opposite is true for underdispersion, i.e. the main issue of underdispersion is that you loose power.
-testDispersion(final) ## Resids are not significantly over or under--dispersed. 
-testZeroInflation(final) ## Zero-inflation is present.
+png(paste0(wd.plot, "final_disp.png"), width = 800, height = 800)
+testDispersion(final) 
+dev.off()
+# Significant under dispersion (dispersion = 1.5532)
+png(paste0(wd.plot, "final_zeroInf.png"), width = 800, height = 800)
+testZeroInflation(final) 
+dev.off()
+## Zero-inflation is present.
+png(paste0(wd.plot, "final_quantiles.png"), width = 800, height = 800)
+testQuantiles(final) 
+dev.off()
 
 ## Try refitting model with a zero-inflation term
-f <- as.formula("cbind(total_pres, total_abs) ~ bathymetry + slope + max_sst +  
-                         avg_sst + mlw_dist + avg_spm + covar_spm + expo + eunis_other_perc +  
-                         eunis_litt_perc + eunis_coar_perc + eunis_sand_perc + eunis_mix_perc +  
-                         I(bathymetry^2) + bathymetry * covar_spm + (1 | id_600m)") ## Formula used in final
+
+f <- as.formula("cbind(total_pres, total_abs) ~ bathymetry + slope + mlw_dist +  
+  avg_spm + covar_spm + expo + eunis_other_perc + eunis_litt_perc +  
+  eunis_coar_perc + eunis_sand_perc + eunis_mix_perc + I(mlw_dist^2) +  
+  bathymetry * mlw_dist + (1 | id_600m)") ## Formula used in final
 final.zi <- glmmTMB(f, family=binomial, data=dat, na.action=na.fail, ziformula = ~1 )
 summary(final.zi)
 testZeroInflation(final.zi) ## Zero-inflation is removed
 
-params <- cbind(fixef(final), fixef(final.zi)[[1]]) ## Fairly similar happily
+params <- cbind(fixef(final), fixef(final.zi)[[1]]) 
+## Fairly similar  
+  # eunis_coarse sign differs (- in model with zero-inf term)
 
 resids.zi <- simulateResiduals(final.zi) ## calculate scaled residuals. a scaled residual value of 0.5 means that half of the simulated data are higher than the observed value, and half of them lower. Min / max values are 0 / 1.
+png(paste0(wd.plot, "final_zero-inf-mod_residuals.png"), width = 900, height = 700)
 plot(resids.zi)
+dev.off()
+# less dispersion on qq plot; resid vs pred still curvey but now pulls towards 1 more
+png(paste0(wd.plot, "final_zero-inf-mod_disp.png"), width = 800, height = 800)
+testDispersion(final.zi) 
+dev.off()
+## Significant but small under-dispersion: 1.5043 (1.5532 in other model). This reduces model power, rather than suggest spurious relationships.
+png(paste0(wd.plot, "final_zero-inf-mod_quantiles.png"), width = 800, height = 800)
+testQuantiles(final.zi) 
+dev.off()
+## Sig. p-value means there is heteroscedasticity and there is an upward trend in the quantile splines that wasn't present in the model without dispersion
 
-testDispersion(final.zi) ## Significant but small under-dispersion: 1.3034. This reduces model power, rather than suggest spurious relationships.
 
-testQuantiles(final.zi) ## Sig. p-value means there is heteroscedasticity and there is an upward trend in the quantile splines that wasn't present in the model without dispersion
+
 
 ## Plot residuals against all predictors to see what could be causing the trend in variance
 ## If the predictor is a factor, or if there is just a small number of observations on the x axis, plotResiduals will plot a box plot with additional tests instead of a scatter plot.
@@ -89,15 +119,16 @@ testSpatialAutocorrelation(resids, x=dat$lon, y=dat$lat) ## p-value significant 
 testSpatialAutocorrelation(resids.zi, x=dat$lon, y=dat$lat) ## p-value significant so spatial autocorrelation exists
 
 ##### Plot explanatory relationships #####
-# ### Calculate the means and standard deviations of the unstandardised data. Don't need to run if run once already, just load csv
-# dat.unstd <- read.csv(paste0(wd.dat,"/cornwall_sg_env_prop_presabs_unique_30m.csv")) ## Shari's data_prep code tells me this is the unstandardised data used to make the standardised data used in modelling
-# 
-# means <- apply(dat.unstd[,vars], 2, function(x) mean(x, na.rm=T))
-# sds <- apply(dat.unstd[,vars], 2, function(x) sd(x, na.rm=T))
-# 
-# destdize <- rbind(means, sds)
-# write.csv(destdize, paste0(wd.dat, "/allAreas_means_sds.csv"), row.names=F)
+### Calculate the means and standard deviations of the unstandardised data. Don't need to run if run once already, just load csv
+dat.unstd <- read.csv(paste0(wd.dat, "falhel_sg_env_prop_occ_unique_30m.csv")) ## Shari's data_prep code tells me this is the unstandardised data used to make the standardised data used in modelling
+
+means <- apply(dat.unstd[,vars], 2, function(x) mean(x, na.rm=T))
+sds <- apply(dat.unstd[,vars], 2, function(x) sd(x, na.rm=T))
+
+destdize <- rbind(means, sds)
+write.csv(destdize, paste0(wd.dat, "/allAreas_means_sds.csv"), row.names=F)
 destdize <- read.csv(paste0(wd.dat, "/allAreas_means_sds.csv"))
+
 
 ##### Plot graphs #####
 
@@ -143,7 +174,7 @@ for (i in vars[1:4]) { ## Run through vars in groups of fours. Rename jpeg with 
 }
 
 dev.off()
-
+par(mfrow=c(1,1))
 ##### Interaction plots ##### 
 ### bathymetry:covar_spm interaction
 jpeg(paste0(wd.out,"/MULTIVAR4i_results_FalHelford_interact_bathyCovarSPM.jpg"), width=600, height=400)
