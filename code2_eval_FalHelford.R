@@ -21,6 +21,7 @@ library(MLmetrics) ## Gini coefficient
 library(partR2)
 library(DHARMa) ## residual diagnostics for hierarchical (multi-level/mixed) regression models. https://cran.r-project.org/web/packages/DHARMa/vignettes/DHARMa.html#interpreting-residuals-and-recognizing-misspecification-problems
 library(glmmTMB)
+library(here)
 conflicted::conflict_prefer("here", "here")
 
 

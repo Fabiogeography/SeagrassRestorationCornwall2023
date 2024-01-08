@@ -5,7 +5,6 @@
 ##### Modified on: December 2023 by Shari Mang  ##############
 ##############################################################
 
-save.image(".RData")
 
 #.libPaths("C:/SOFTWARE/R-4.3.2/library")
 install.packages("interactions", dependencies=TRUE, repos='http://cran.rstudio.com/')
@@ -73,16 +72,8 @@ names(env) <- vars
 
 
 
-
 ##### Extract and map spatial autocorrelation in the residuals - GLM #####
 ## Set up a blank rasterfile
-
-## Alternative way to calculate residuals ##
-# resids.sim <- simulateResiduals(final) ## calculate scaled residuals. a scaled residual value of 0.5 means that half of the simulated data are higher than the observed value, and half of them lower. Min / max values are 0 / 1.
-# summary(resids.sim$scaledResiduals)
-# plot(resids, resids.sim[["scaledResiduals"]])
-
-# With data in BNG crs 
 rast_v2 <- (env$bathymetry / env$bathymetry) - 1 # is in bng
 ## Extract residuals from the GLM
 resids_v2 <- residuals(final)
@@ -99,12 +90,12 @@ xy_resids_v2 <- sf::st_transform(xy_resids_v2, crs(rast_v2)) # convert go BNG
 # extract coordinates
 xy_resids_v2 <- xy_resids_v2 %>%
   dplyr::mutate(lon = sf::st_coordinates(.)[,1],
-                lat = sf::st_coordinates(.)[,2]) 
+                lat = sf::st_coordinates(.)[,2]) # create columns of lat and lon from geometry
 xy <- cbind(as.numeric(xy_resids_v2$lon), as.numeric(xy_resids_v2$lat)) # coordinates of those records
-rast_v2[cellFromXY(rast_v2, xy)] <- xy_resids_v2$resids
+rast_v2[cellFromXY(rast_v2, xy)] <- xy_resids_v2$resids # populate blank raster with residual values
 names(rast_v2) <- "resids"
 summary(rast_v2, size=ncell(rast_v2)); summary(resids_v2)
-writeRaster(rast_v2, paste0(wd.out,"spatial/resids_FalHelford_bng.tif"), overwrite = TRUE) ### WORKED ###
+writeRaster(rast_v2, paste0(wd.out,"spatial/resids_FalHelford_bng.tif"), overwrite = TRUE) 
 
 # Convert to original names so it matches script to follow
 rast <- rast_v2
@@ -116,14 +107,13 @@ xy_resids <- vect(xy_resids_v2) # want as spatVector (terra format)
 ## Focal operations: ngb is neighbourhood size, set to 3 by 3 cells; fun is function, 
 
 ## Calculate the moving window values for the neighbourhood of focal cells. 
-rac <- focal(rast, w=matrix(1/9,nrow=3,ncol=3), fun="sum") ## 3x3 mean filter. Something weird happening with this on 1st Dec 2023 (agter R upgrade)- use the saved raster instead
+rac <- focal(rast, w=matrix(1/9,nrow=3,ncol=3), fun="sum") ## 3x3 mean filter. 
 plot(rac)
 plot(xy_resids, add=T)
 #writeRaster(rac, paste0(wd.out,"spatial/rac_FalHelford.tif"), overwrite = TRUE)
 rac <- terra::rast(paste0(wd.out,"spatial/rac_FalHelford.tif"))
 
 ## Extract the autocovariate to a vector and add to the presence/absence locations
-# rac<- terra::extract(rac, xy_resids)$resids   ## doesn't work ## -> creates a null object 
 rac <- terra::extract(rac, xy_resids)
 rac[is.na(rac)] <- 0 ## remove NAs
 dat.rac <- cbind(dat, rac)
@@ -152,8 +142,9 @@ ss$ theta               ## Cholesky factors of the random effect covariance matr
 ss$ which.OK            ## which fits worked
 ### Values are all very similar so ignore the convergence warnings for now at least
 
+
 ##### How does the model with the spatial autocovariate perform? #####
-## Compare parameter estimates with and without spatial autocovariate ***and SST***
+## Compare parameter estimates with and without spatial autocovariate 
 params <- cbind(c(fixef(final),NA), fixef(multivar4i.rac)) 
 ## bath, mlw_dist, avg_spm, expo, eunis_coar, euniws_mis, bath^2 have steeper effects. 
 colnames(params) <- c("final_mod", "spat_auto_mod") 
@@ -210,6 +201,7 @@ testSpatialAutocorrelation(resids.rac, x=dat$lon, y=dat$lat) ## p-value signific
 # destdize <- rbind(means, sds)
 # write.csv(destdize, paste0(wd.dat, "/allAreas_means_sds.csv"), row.names=F)
 destdize <- read.csv(paste0(wd.dat, "/allAreas_means_sds.csv"))
+
 
 ##### Plot graphs #####
 

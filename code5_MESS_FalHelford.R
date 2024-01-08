@@ -36,6 +36,8 @@ eunis_coar_perc <- terra::rast(here("variables/eunis/study_area/cornwall_eunis_c
 eunis_sand_perc <- terra::rast(here("variables/eunis/study_area/cornwall_eunis_cat_4_pres_abs.tif"))
 eunis_mix_perc <- terra::rast(here("variables/eunis/study_area/cornwall_eunis_cat_6_pres_abs.tif"))
 
+
+
 ## Identify the coarse variables, which need resampling to the fine variables
 for (v in vars) {
   print(paste(v, res(get(v))))
@@ -85,16 +87,33 @@ for(i in vars) {
 
 # Mask of negative values --> indicates dissimilar environments 
 mess_mask <- mess.out$rmess < 0
+mess_mask[mess_mask == 0] <- NA
 plot(mess_mask)
 writeRaster(mess_mask, paste0(wd.out,"MESS_mask_negval.tif"), overwrite = TRUE)
+#mess.out <- terra::rast(paste0(wd.out,"MESS_FalHelford.tif"))
 
 
-# Load alt mess rmess that doesn't have values on land
+## Version with only positive values (excludes zero)
+# # Load alt mess rmess that doesn't have values on land
+# mess.alt <- terra::rast(paste0(wd.out,"MESS_FalHelford_alt.tif"))
+# mess_positive <- mess.alt
+# mess_positive[mess_positive < 0] <- NA
+# mess_positive <- subst(mess_positive, 0, NA) # don't care about zeros either
+# plot(mess_positive)
+# writeRaster(mess_positive, paste0(wd.out, "MESS_FalHelford_positive.tif"), overwrite = TRUE)
+
+
+
+# including zeros -- all non-negative values
 mess.alt <- terra::rast(paste0(wd.out,"MESS_FalHelford_alt.tif"))
 mess_positive <- mess.alt
-mess_positive[mess_positive < 0] <- NA
-mess_positive <- subst(mess_positive, 0, NA) # don't care about zeros either
+mess_positive[mess_positive < 0] <- NA # remove all negative values
+# make all remaining values 1 -- just want a mask of non-negative values
+m <- matrix(c(0, Inf, 1),
+            nrow = 1, byrow = T)
+mess_positive <- terra::classify(mess_positive, m, include.lowest = TRUE)
 plot(mess_positive)
-writeRaster(mess_positive, paste0(wd.out, "MESS_FalHelford_positive.tif"), overwrite = TRUE)
+writeRaster(mess_positive, paste0(wd.out, "MESS_FalHelford_non-negative.tif"), overwrite = TRUE)
+
 
 

@@ -5,7 +5,6 @@
 ##### Modified on: 21st December 2023 by Shari Mang ###############
 ##############################################################
 
-#.libPaths("C:/SOFTWARE/R-4.3.2/library")
 
 install.packages("merTools", dependencies=TRUE, repos='http://cran.rstudio.com/')
 library(merTools) ## predictInterval - bootstrapped confidence intervals for mixed models in a reasonable time. averageObs.
@@ -82,7 +81,7 @@ env <- as.data.frame(terra::extract(env.ras, 1:ncell(env.ras)))
 ## Add the random effect value
 mean(multivar4i.rac@frame$id_600m) # 3417.318  # @frame is the data associated with a merMod object
 env$id_600m <- 3417  
-    # 3700 used previously - check with Regan as only mean calculation is commented out
+
 
 
 ### Make the prediction for the final model, including 95% confidence intervals

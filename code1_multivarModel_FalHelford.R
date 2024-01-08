@@ -25,6 +25,8 @@ colnames(dat) # sea surface temp variables not included in this data
 dat <- dat %>% ## Models will not run with NA values in data
   drop_na()
 View(dat)
+
+write.csv(dat, paste0(wd.dat, "falhel_sg_env_model_data.csv"))
 ### Response variable is number of presence and number of absence in each 30m grid cell
 # Response is the number of presence and absence points within a 30m grid cell
 # Bind response var into single matrix
@@ -82,15 +84,12 @@ multivar2 <- dredge(multivar1, beta="sd", evaluate=T, trace=2, cluster=clust) ##
 save(multivar2, file=paste0(wd.out, "multivar2_FalHelford_lin_dredge"))
 load(file=paste0(wd.out, "multivar2_FalHelford_lin_dredge"))
 
-colnames(multivar2)[1] <- "Intercept" ## write.csv doesn't like the column name having parentheses
-write.csv(multivar2, file=paste0(wd.out,"/multivar2_FalHelford.csv"), row.names=F)
-
 multivar2_df <- multivar2[multivar2$delta<=2,] ## 4 models fall into the best model subset. All variables in at least 1 model
 View(multivar2_df)
 multivar2.best <- get.models(multivar2, subset=delta<2)
-multivar2.best <- get.models(multivar2, subset=1)[[1]] ## keeps saying object not correct type -- maybe because column name was changed, it's now a dataframe
+multivar2.best <- get.models(multivar2, subset=1)[[1]] # AIC 20924.81
 save(multivar2.best, file=paste0(wd.out,"/multivar2_bestModel_FalHelford"))
-# load(paste0(wd.out,"/multivar2_bestModel_FalHelford")) ## Dredging had to be done on the cluster. Load here.
+load(paste0(wd.out,"/multivar2_bestModel_FalHelford")) ## Dredging had to be done on the cluster. Load here.
 
 ### Investigate the best model. Check VIF of single best model.
 vif(multivar2.best, singular.ok = TRUE) 
@@ -115,16 +114,21 @@ for (i in 1:length(multivar2q.vars)) {
   assign(paste0("f",i), as.formula(paste0("cbind(total_pres, total_abs) ~ ",multivar2.vars, " + ", multivar2q.vars[i], " + (1|id_600m)")))
   assign(paste0("m",i), glmer(get(paste0("f",i)), family=binomial, dat, na.action=na.fail))
 } 
-# ~~~~~ doesn't converge ~~~~~~ #
 
 ## Compare models using AICc
 multivar2q.vars.sel <- model.sel(mget(c(paste0("m",1:length(multivar2q.vars)), "multivar1"))) 
 
 ## Get the explanatory variables in the models below the delta AICc threshold.
 multivar2q <- get.models(multivar2q.vars.sel, subset=delta<2) 
-## There was one best model, m1, that included all linear terms and the quadratic term of mlw distance (previously was bathymetry)
-
+# AIC 20853.75
+## There was one best model, m1, that included all linear terms and the quadratic term of mlw distance
 names(multivar2q) <- "multivar2q"
+
+AIC(multivar2.best); AIC(multivar2q[[1]])
+# Without quadratic AIC = 20924.81
+# With quadratic AIC = 20853.75
+AIC(multivar2.best)- AIC(multivar2q[[1]])
+# delta AIC = 71.06
 
 ## Inspect models (ask whether fixed effect relationships meaningful)
 for(i in 1:length(multivar2q)) {print(summary(multivar2q[[i]]))}  
@@ -178,7 +182,6 @@ ints <- as.vector(apply(ints, 2, paste, collapse=" * "))
 ints <- ints[-c(1:length(a))] ## Remove combos of the same variable
 
 
-
 ## Fit all models with one interaction
 multivar4.vars <- paste(a, collapse=" + ")
 fs <- lapply(ints, function(x) {as.formula(paste0("cbind(total_pres, total_abs) ~ ", multivar4.vars, " + ", x, " + (1|id_600m)"))}) ## Make one formula for each interaction added to the existing fixed effects
@@ -192,7 +195,7 @@ head(multivar4i.sel[, c("AICc", "delta")])
 multivar4i  <- get.models(multivar4i.sel , subset=delta<2) 
 ## Single best model containing interaction between bathymetry amd distance mlw. 
 # SD of random effect is ~1.4, and fixed effect estimates are between -0.3 and 0.7. So random effect still seems reasonable to include (best model without random effect contained the same linear and quadratic effects byt no interactions)
-multivar4i.best <- multivar4i[[1]]
+multivar4i.best <- multivar4i[[1]] # AIC = 20683.02
 
 ### Compare to model without random effect of coarse grid-cell
 a <- names(fixef(multivar4i.best)) ## Get all the variables in teh best model 
@@ -219,36 +222,14 @@ cbind(fixef(multivar4i.best), coefficients(m))
 ## Check VIF
 vif(multivar4i.best, singular.ok = TRUE) ## Sand and mix ~ 2.
 
+AIC(multivar4i.best); AIC(multivar2q.best)
+# 20683.02 and 20853.75
+AIC(multivar4i.best) - AIC(multivar2q.best) # delta AIC = 170.7319
+
 ## Save the best model 
 save(multivar4i.best, file=paste0(wd.out,"/multivar4i_bestModel_FalHelford"))
 # load(paste0(wd.out,"/multivar4i_bestModel_FalHelford"))
 
-
-
-
-#### ~~~~ Alternative check for interactions ~~~~~ ####
-### Running this section in the background as dredge was very long ###
-# Allowing more than one interaction per model 
-
-### Check interactions between linear terms of all variables retained in multivar2q
-multivar4 <- multivar2q.best
-
-### Identify all the variables in multivar4 best model
-a <- names(fixef(multivar4)) ## Get all the variables in the best model 
-a <- a[a!="(Intercept)"]
-al <- a[!a %in% grep("I", a, value = T)] ## linear terms only
-# interactions to consider -> 
-inter <- c("bathymetry * mlw_dist", "mlw_dist * avg_spm", "mlw_dist * covar_spm", "bathymetry * avg_spm")
-multivar4.vars.alt  <- paste(c(a, inter), collapse=" + ")
-
-f <- as.formula(paste0("cbind(total_pres, total_abs) ~ ", multivar4.vars.alt, " + (1|id_600m)"))
-multivar4i.alt <- glmer(f, family=binomial, dat, na.action=na.fail)
-
-
-# Compare models using AICc and save selection table
-msubset <- expression(dc("mlw_dist", "I(mlw_dist^2)"))
-
-multivar4i.alt.d <- dredge(multivar4i.alt, beta="sd", evaluate=T, trace=2, subset = msubset, cluster=clust) 
 
 
 
